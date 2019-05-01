@@ -1,6 +1,7 @@
  Make sure two nodes are on the same kernel 
 
 Node A:
+```
  4.15.0-45-generic
  cd hetnet-gzip && make
 
@@ -22,9 +23,11 @@ Node A:
 [50163] hetpot is waiting for compression  6
 [50163] hetpot is waiting for compression  7
 [50163] hetpot is waiting for compression  8
+```
  ........................
 
  Open another terminal and go to the same directory /popcorn/miniz
+```
   ps -C popcorn-miniz
   PID TTY          TIME CMD
  50163 pts/9    00:00:00 popcorn-miniz
@@ -50,9 +53,10 @@ Killed
 
  sudo scp popcorn-miniz* 1.txt sunsky@192.168.10.22:/popcorn/miniz
  sudo scp -r aarch64/ sunsky@192.168.10.22:/popcorn/miniz
-
+```
 
 Node B:
+```
  4.15.0-45-generic
 
 sunsky@sunsky:/popcorn$ ls -lt
@@ -108,6 +112,6 @@ Hetpot starts compression
 sunsky@sunsky:/popcorn/miniz/aarch64$ cd ..
 sunsky@sunsky:/popcorn/miniz$ ls -lt
 -rwxr-x--T 1   1004 sunsky       24 May  1 09:55 1.txt.gz
-
+```
 
 
