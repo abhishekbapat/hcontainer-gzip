@@ -7,6 +7,8 @@ Node A:
 
  cp popcorn-miniz popcorn-miniz_x86-64 popcorn-miniz_aarch64 /popcorn/miniz
 
+ The permission of the miniz should be 777 since the usrs on both nodes are different.
+
  helios@helios-PowerEdge-R7425:/popcorn$ ls -lt
  drwxrwxrwx 3 helios helios    4096 May  1 09:53 miniz
  
