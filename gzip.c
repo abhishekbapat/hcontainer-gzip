@@ -13,6 +13,36 @@
 #include <fcntl.h>
 #include <err.h>
 #include "miniz.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <sys/wait.h>
+#include <signal.h>
+
+
+#define PORT "3490"  // the port users will be connecting to
+
+#define BACKLOG 10     // how many pending connections queue will hold
+
+#define BUFFER_SIZE 1024 
+
+
+void sigchld_handler(int s)
+{
+    while(waitpid(-1, NULL, WNOHANG) > 0);
+}
+
+// get sockaddr, IPv4 or IPv6:
+void *get_in_addr(struct sockaddr *sa)
+{
+    if (sa->sa_family == AF_INET) {
+        return &(((struct sockaddr_in*)sa)->sin_addr);
+    }
+
+    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+}
+
 
 typedef struct {
 	int l;
@@ -136,92 +166,218 @@ void print_iteration()
 }
 
 
-int main (int argc, char *argu[]) {
-	int level = 6 /* zip level; 0 to mean unzip */, flags = 0, ii;
-	char **ss, **ts;
-	for (ii = 1; ii < argc; ii++) {
-		if (argu[ii][0] != '-' || argu[ii][1] == 0) break;
-		if (argu[ii][1] == '-' && argu[ii][2] == 0) {
-			ii++;
-			break;
-		}
-		for (int jj = 1; argu[ii][jj]; jj++) switch (argu[ii][jj]) {
-		case 'c':
-			flags |= cFlag;
-			break;
-		case 'd':
-			level = 0;
-			break;
-		default:
-			if (argu[ii][jj] <= '9' && argu[ii][jj] >= '0') level = (int)(argu[ii][jj] - '0');
-			break;
-		}
-	}
+int main (void) {
 
-	argu[--ii] = argu[0];
-	argc -= ii;
-	argu += ii;
 
-	ss = argu;
-	if (!flags & cFlag) {
-		ts = malloc (sizeof (char *)*(argc - 1));
-		if (!ts) err (-1, "failed to allocate memory");
-		for (int ii = 1; ii < argc; ii++) {
-			if (level == 0) {
-				char *p;
-				ts[ii] = strdup (ss[ii]);
-				if (!ts[ii]) err (-1, "failed to allocate memory");
-				p = strrchr (ts[ii], '.');
-				if (!p) errx (-1, "%s: no \".gz\" suffix", ts[ii]);
-				p[0] = 0;
-			}
-			else {
-				ts[ii] = malloc (strlen (ss[ii]) + 4);
-				strcpy (ts[ii], ss[ii]);
-				strcat (ts[ii], ".gz");
-			}
-		}
-	}
-        
 
-        for (int i = 0; i < 60; i++)
-        {
-               print_iteration();
-               sleep(1);
+
+    int sockfd, new_fd;  // listen on sock_fd, new connection on new_fd
+    struct addrinfo hints, *servinfo, *p;
+    struct sockaddr_storage their_addr; // connector's address information
+    socklen_t sin_size;
+    struct sigaction sa;
+    int yes=1;
+    char s[INET6_ADDRSTRLEN];
+    int rv;
+
+    char buffer[BUFFER_SIZE];
+
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE; // use my IP
+
+    if ((rv = getaddrinfo(NULL, PORT, &hints, &servinfo)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        return 1;
+    }
+
+    // loop through all the results and bind to the first we can
+    for(p = servinfo; p != NULL; p = p->ai_next) {
+        if ((sockfd = socket(p->ai_family, p->ai_socktype,
+                p->ai_protocol)) == -1) {
+            perror("server: socket");
+            continue;
         }
 
+        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes,
+                sizeof(int)) == -1) {
+            perror("setsockopt");
+            exit(1);
+        }
+
+        if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+            close(sockfd);
+            perror("server: bind");
+            continue;
+        }
+
+        break;
+    }
+
+    if (p == NULL)  {
+        fprintf(stderr, "server: failed to bind\n");
+        return 2;
+    }
+
+    freeaddrinfo(servinfo); // all done with this structure
+
+    if (listen(sockfd, BACKLOG) == -1) {
+        perror("listen");
+        exit(1);
+    }
+
+    sa.sa_handler = sigchld_handler; // reap all dead processes
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+        perror("sigaction");
+        exit(1);
+    }
+
+    printf("server: waiting for connections...\n");
+
+    while(1) {  // main accept() loop
+        sin_size = sizeof their_addr;
+        new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
+        if (new_fd == -1) {
+            perror("accept");
+            continue;
+        }
+
+        inet_ntop(their_addr.ss_family,
+            get_in_addr((struct sockaddr *)&their_addr),
+            s, sizeof s);
+        printf("server: got connection from %s\n", s);
+
+        bzero(buffer, BUFFER_SIZE);
+        sin_size = recv(new_fd, buffer, BUFFER_SIZE,0);
+        if (sin_size < 0)
+        {
+           printf ("Server Receive Data Failed!\n");
+           continue;
+        }
+        else
+        {
+           
+            int level = 6 /* zip level; 0 to mean unzip */, flags = 0, ii;
+            char **ss, **ts;
+            const char * split = ",";
+            char * p;
+            int argc =0;
+            char *argu[1028];
+            p = strtok(buffer, split);
+             
+            while(p!=NULL){
+           
+            argu[ii] = (char*)malloc( strlen(p)+1);
+            strcpy(argu[ii], p);
+            argc++;
+            p = strtok(NULL, split);
+            ii++;
+            }
+
+
+             for (ii = 1; ii < argc; ii++) {
+                 if (argu[ii][0] != '-' || argu[ii][1] == 0) break;
+                 if (argu[ii][1] == '-' && argu[ii][2] == 0) {
+                        ii++;
+                        break;
+                 }
+                 for (int jj = 1; argu[ii][jj]; jj++) switch (argu[ii][jj]) {
+                 case 'c':
+                        flags |= cFlag;
+                        break;
+                 case 'd':
+                        level = 0;
+                        break;
+                 default:
+                        if (argu[ii][jj] <= '9' && argu[ii][jj] >= '0') level = (int)(argu[ii][jj] - '0');
+                        break;
+                 }
+            }
+
+            argu[--ii] = argu[0];
+            argc -= ii;
+      //      argu = argu + ii;
+            ss = argu;
+            if (!flags & cFlag) {
+                ts = malloc (sizeof (char *)*(argc - 1));
+                if (!ts) err (-1, "failed to allocate memory");
+                for (int ii = 1; ii < argc; ii++) {
+                        if (level == 0) {
+                                char *p;
+                                printf("s1s[ii]:  %s\n", ss[ii]);    
+                                ts[ii] = strdup (ss[ii]);
+                                printf("ts[ii]:    %s\n", ts[ii]);
+                                if (!ts[ii]) err (-1, "failed to allocate memory");
+                                p = strrchr (ts[ii], '.');
+                                if (!p) errx (-1, "%s: no \".gz\" suffix", ts[ii]);
+                                p[0] = 0;
+                        }
+                        else {
+                                ts[ii] = malloc (strlen (ss[ii]) + 4);
+                                
+                                strcpy (ts[ii], ss[ii]);
+                                strcat (ts[ii], ".gz");
+                        }
+                }
+            }
+
+
+            for (int i = 0; i < 6; i++)
+            {
+               print_iteration();
+               sleep(1);
+            }
 
 
 
 
 
-
-
-
-	for (int ii = 1; ii < argc; ii++) {
-		int ifd, ofd;
+            for (int ii = 1; ii < argc; ii++) {
+                int ifd, ofd;
                 int sfd;
-		struct stat st;
+                struct stat st;
                 st.st_blksize = 521;
                 st.st_blocks = 521;
-//		if (stat (ss[ii], &st) < 0) err (-1, "failed to stat %s:", ss[ii]);
-                 
-		ifd = open (ss[ii], O_RDONLY);
-		ofd = flags & cFlag ? 1 : open (ts[ii], O_WRONLY | O_CREAT, st.st_mode);
+//              if (stat (ss[ii], &st) < 0) err (-1, "failed to stat %s:", ss[ii]);
+
+                ifd = open (ss[ii], O_RDONLY);
+                ofd = flags & cFlag ? 1 : open (ts[ii], O_WRONLY | O_CREAT, st.st_mode);
                 sfd = open(ts[ii], O_WRONLY | O_CREAT, st.st_mode);
-		if (ifd < 0 || ofd < 0) err (-1, "failed to open");
-                
+                if (ifd < 0 || ofd < 0) err (-1, "failed to open");
+
                 printf("Hetpot starts compression\n");
-		if (level == 0) ungz (ifd, ofd);
-		else gz (level, ifd, ofd);
-	}
+                if (level == 0) ungz (ifd, ofd);
+                else gz (level, ifd, ofd);
+            }
 
-          
+            if (argc <= 1) {
+                if (level == 0) ungz (0, 1);
+                else gz (level, 0, 1);
+            }
 
-	
-	if (argc <= 1) {
-		if (level == 0) ungz (0, 1);
-		else gz (level, 0, 1);
-	}
-	return 0;
+
+
+
+
+
+    }
+
+
+
+        if (!fork()) { // this is the child process
+            close(sockfd); // child doesn't need the listener
+            if (send(new_fd, "Finish Compression", 23, 0) == -1)
+                perror("send");
+            close(new_fd);
+            exit(0);
+        }
+        close(new_fd);  // parent doesn't need this
+    }
+
+  
+    return 0;
 }
