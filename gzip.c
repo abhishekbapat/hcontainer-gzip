@@ -2,6 +2,7 @@
  * 
  * This work comes AS IS, WITH ALL FAULTS, WITH NO WARRANTY OF ANY KIND WHATSOEVER, not even the implied warranties of MERCHANTABILITY, FITNESS, and TITLE.
  * In NO CASE SHALL THE AUTHOUR BE LIABLE for ANY DAMAGES OR HARMS CAUSED BY OR LINKED TO THIS WORK.
+   ADDED MORE FUNCTIONALITY FOR SERVER BY WEI WANG STEVENS 2019
  */
 #include <stdio.h>
 #include <unistd.h>
@@ -19,13 +20,20 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <netdb.h> 
+#include <netinet/in.h> 
+#include <stdlib.h> 
+#include <string.h> 
+#include <sys/socket.h> 
+#include <sys/types.h> 
+#define MAX 80 
+#define SA struct sockaddr 
 
-
-#define PORT "3490"  // the port users will be connecting to
+#define PORT 8899  // the port users will be connecting to
 
 #define BACKLOG 10     // how many pending connections queue will hold
 
-#define BUFFER_SIZE 1024 
+#define BUFFER_SIZE 500000 
 
 
 void sigchld_handler(int s)
@@ -165,219 +173,168 @@ void print_iteration()
         printf("[%d] hetpot is waiting for compression  %d\n", getpid(), i++);
 }
 
-
-int main (void) {
-
-
-
-
-    int sockfd, new_fd;  // listen on sock_fd, new connection on new_fd
-    struct addrinfo hints, *servinfo, *p;
-    struct sockaddr_storage their_addr; // connector's address information
-    socklen_t sin_size;
-    struct sigaction sa;
-    int yes=1;
-    char s[INET6_ADDRSTRLEN];
-    int rv;
-
-    char buffer[BUFFER_SIZE];
-
-
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE; // use my IP
-
-    if ((rv = getaddrinfo(NULL, PORT, &hints, &servinfo)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        return 1;
-    }
-
-    // loop through all the results and bind to the first we can
-    for(p = servinfo; p != NULL; p = p->ai_next) {
-        if ((sockfd = socket(p->ai_family, p->ai_socktype,
-                p->ai_protocol)) == -1) {
-            perror("server: socket");
-            continue;
-        }
-
-        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes,
-                sizeof(int)) == -1) {
-            perror("setsockopt");
-            exit(1);
-        }
-
-        if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(sockfd);
-            perror("server: bind");
-            continue;
-        }
-
-        break;
-    }
-
-    if (p == NULL)  {
-        fprintf(stderr, "server: failed to bind\n");
-        return 2;
-    }
-
-    freeaddrinfo(servinfo); // all done with this structure
-
-    if (listen(sockfd, BACKLOG) == -1) {
-        perror("listen");
-        exit(1);
-    }
-
-    sa.sa_handler = sigchld_handler; // reap all dead processes
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-        perror("sigaction");
-        exit(1);
-    }
-
-    printf("server: waiting for connections...\n");
-
-    while(1) {  // main accept() loop
-        sin_size = sizeof their_addr;
-        new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
-        if (new_fd == -1) {
-            perror("accept");
-            continue;
-        }
-
-        inet_ntop(their_addr.ss_family,
-            get_in_addr((struct sockaddr *)&their_addr),
-            s, sizeof s);
-        printf("server: got connection from %s\n", s);
-
-        bzero(buffer, BUFFER_SIZE);
-        sin_size = recv(new_fd, buffer, BUFFER_SIZE,0);
-        if (sin_size < 0)
-        {
-           printf ("Server Receive Data Failed!\n");
-           continue;
-        }
-        else
-        {
-           
-            int level = 6 /* zip level; 0 to mean unzip */, flags = 0, ii;
-            char **ss, **ts;
-            const char * split = ",";
-            char * p;
-            int argc =0;
-            char *argu[1028];
-            p = strtok(buffer, split);
-             
-            while(p!=NULL){
-           
-            argu[ii] = (char*)malloc( strlen(p)+1);
-            strcpy(argu[ii], p);
-            argc++;
-            p = strtok(NULL, split);
-            ii++;
-            }
-
-
-             for (ii = 1; ii < argc; ii++) {
-                 if (argu[ii][0] != '-' || argu[ii][1] == 0) break;
-                 if (argu[ii][1] == '-' && argu[ii][2] == 0) {
-                        ii++;
-                        break;
-                 }
-                 for (int jj = 1; argu[ii][jj]; jj++) switch (argu[ii][jj]) {
-                 case 'c':
-                        flags |= cFlag;
-                        break;
-                 case 'd':
-                        level = 0;
-                        break;
-                 default:
-                        if (argu[ii][jj] <= '9' && argu[ii][jj] >= '0') level = (int)(argu[ii][jj] - '0');
-                        break;
-                 }
-            }
-
-            argu[--ii] = argu[0];
-            argc -= ii;
-      //      argu = argu + ii;
-            ss = argu;
-            if (!flags & cFlag) {
-                ts = malloc (sizeof (char *)*(argc - 1));
-                if (!ts) err (-1, "failed to allocate memory");
-                for (int ii = 1; ii < argc; ii++) {
-                        if (level == 0) {
-                                char *p;
-                                printf("s1s[ii]:  %s\n", ss[ii]);    
-                                ts[ii] = strdup (ss[ii]);
-                                printf("ts[ii]:    %s\n", ts[ii]);
-                                if (!ts[ii]) err (-1, "failed to allocate memory");
-                                p = strrchr (ts[ii], '.');
-                                if (!p) errx (-1, "%s: no \".gz\" suffix", ts[ii]);
-                                p[0] = 0;
-                        }
-                        else {
-                                ts[ii] = malloc (strlen (ss[ii]) + 4);
-                                
-                                strcpy (ts[ii], ss[ii]);
-                                strcat (ts[ii], ".gz");
-                        }
-                }
-            }
-
-
-            for (int i = 0; i < 6; i++)
+int dealshit()
             {
-               print_iteration();
-               sleep(1);
-            }
+
+               int ifd, ofd;
+               int sfd;
+               int level = 6;
+               char *ts;
+
+               char *ss = "1.txt"; 
+
+
+               ts = malloc(strlen(ss)+5);
+               ifd = open ("1.txt", O_RDONLY);
+               strcpy (ts, ss);
+               strcat (ts, ".gz");
+
+               ofd = open (ts, O_WRONLY | O_CREAT);
+               
+               if (ifd < 0 || ofd < 0) 
+		err (-1, "failed to open");
+               else
+               {
+
+                gz (level, ifd, ofd);
+		close (ifd); close(ofd); free (ts);
+
+                return 1;
+               }
+               return 0;
+             }
+
+
+
+int main(int argc, char const *argv[])
+{
+    int server_fd, new_socket, valread;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+    char buffer[500000] = {0};
+    char *ack = "ACK";
+    FILE* fd;
+    // Creating socket file descriptor 
 
 
 
 
 
-            for (int ii = 1; ii < argc; ii++) {
-                int ifd, ofd;
-                int sfd;
-                struct stat st;
-                st.st_blksize = 521;
-                st.st_blocks = 521;
-//              if (stat (ss[ii], &st) < 0) err (-1, "failed to stat %s:", ss[ii]);
-
-                ifd = open (ss[ii], O_RDONLY);
-                ofd = flags & cFlag ? 1 : open (ts[ii], O_WRONLY | O_CREAT, st.st_mode);
-                sfd = open(ts[ii], O_WRONLY | O_CREAT, st.st_mode);
-                if (ifd < 0 || ofd < 0) err (-1, "failed to open");
-
-                printf("Hetpot starts compression\n");
-                if (level == 0) ungz (ifd, ofd);
-                else gz (level, ifd, ofd);
-            }
-
-            if (argc <= 1) {
-                if (level == 0) ungz (0, 1);
-                else gz (level, 0, 1);
-            }
 
 
 
 
 
 
+   
+
+
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
+    {
+        printf("socket failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Forcefully attaching socket to the port 8080 
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                                                  &opt, sizeof(opt)))
+    {
+        printf("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons( PORT );
+    // Forcefully attaching socket to the port 8080 
+    if (bind(server_fd, (struct sockaddr *)&address,
+                                 sizeof(address))<0)
+    {
+        printf("bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("launching...\n");
+    if (listen(server_fd, 3) < 0)
+    {
+   //     printf("listen");
+        exit(EXIT_FAILURE);
+    }
+int writesize;
+while(1)
+{
+
+if ((new_socket = accept(server_fd, (struct sockaddr *)&address,
+                       (socklen_t*)&addrlen))<0)
+    {
+        perror("accept");
+        exit(EXIT_FAILURE);
     }
 
 
 
-        if (!fork()) { // this is the child process
-            close(sockfd); // child doesn't need the listener
-            if (send(new_fd, "Finish Compression", 23, 0) == -1)
-                perror("send");
-            close(new_fd);
-            exit(0);
-        }
-        close(new_fd);  // parent doesn't need this
-    }
 
-  
+
+ bzero(buffer,500000);
+
+ valread = read( new_socket , buffer, 1);
+ if(buffer[0] == '0')
+   writesize =3;
+ else if(buffer[0] == '1')
+   writesize =30000;
+ else if(buffer[0] == '2')
+   writesize =300;
+ else
+   writesize =300000;
+
+ send(new_socket, ack, strlen(ack), 0 );
+
+/*  printf("strat lestening\n");
+    if ((new_socket = accept(server_fd, (struct sockaddr *)&address,
+                       (socklen_t*)&addrlen))<0)
+    {
+        perror("accept");
+        exit(EXIT_FAILURE);
+    }*/
+ bzero(buffer, 500000);
+ valread = read(new_socket, buffer, writesize);
+
+    fd=fopen("1.txt","w");
+    int check;
+    check = fwrite(buffer, writesize, 1, fd);
+    if(check<0)
+      printf("file write error\n");
+    fclose(fd);
+
+
+
+
+
+
+
+
+   int result = dealshit();
+    if (result ==1)
+    {
+       int status;
+       char * tt = "1.txt.gz";
+       status = remove(tt);
+
+
+
+
+
+
+
+       send(new_socket ,ack  , strlen(ack) , 0 );
+
+    }
+    else
+    {
+        printf("gzip error\n");
+	send (new_socket ,ack  , strlen(ack) , 0 );
+    }
+    close (new_socket);
+}
     return 0;
 }
