@@ -686,11 +686,12 @@ int mz_deflateInit2(mz_streamp pStream, int level, int method, int window_bits, 
   pStream->total_out = 0;
   if (!pStream->zalloc) pStream->zalloc = def_alloc_func;
   if (!pStream->zfree) pStream->zfree = def_free_func;
-
+  //assign a space to pComp
   pComp = (tdefl_compressor *)pStream->zalloc(pStream->opaque, 1, sizeof(tdefl_compressor));
-  if (!pComp)
+  if (!pComp){
     return MZ_MEM_ERROR;
-
+	}
+  // pStream -> state hold the assigned space
   pStream->state = (struct mz_internal_state *)pComp;
 
   if (tdefl_init(pComp, NULL, NULL, comp_flags) != TDEFL_STATUS_OKAY)
@@ -698,7 +699,8 @@ int mz_deflateInit2(mz_streamp pStream, int level, int method, int window_bits, 
     mz_deflateEnd(pStream);
     return MZ_PARAM_ERROR;
   }
-
+  //free the alloc memory
+  //pStream->zfree(pStream->opaque, pComp);
   return MZ_OK;
 }
 
@@ -756,6 +758,8 @@ int mz_deflate(mz_streamp pStream, int flush)
       return MZ_BUF_ERROR; // Can't make forward progress without some input.
     }
   }
+  //release the space.
+  pStream->zfree(pStream->opaque, pStream->state);
   return mz_status;
 }
 

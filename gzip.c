@@ -3,6 +3,7 @@
  * This work comes AS IS, WITH ALL FAULTS, WITH NO WARRANTY OF ANY KIND WHATSOEVER, not even the implied warranties of MERCHANTABILITY, FITNESS, and TITLE.
  * In NO CASE SHALL THE AUTHOUR BE LIABLE for ANY DAMAGES OR HARMS CAUSED BY OR LINKED TO THIS WORK.
    ADDED MORE FUNCTIONALITY FOR SERVER BY WEI WANG STEVENS 2019
+   REWRITE SERVER AND MEMORY ALLOACTION BY TONG XING STEVENS 2019
  */
 #include <stdio.h>
 #include <unistd.h>
@@ -26,14 +27,14 @@
 #include <string.h> 
 #include <sys/socket.h> 
 #include <sys/types.h> 
+#include <time.h>
+
 #define MAX 80 
 #define SA struct sockaddr 
 
-#define PORT 8899  // the port users will be connecting to
+#define PORT 25659  // the port users will be connecting to
 
 #define BACKLOG 10     // how many pending connections queue will hold
-
-#define BUFFER_SIZE 500000 
 
 
 void sigchld_handler(int s)
@@ -66,14 +67,14 @@ static int chunkSize = 1 << 20;
 St go (int level /* Zip level; 0 to mean unzip */, int ifd, int ofd) {
 	uint8_t x[1048576], y[1048576];
 	z_stream s;
-	
+        s.zalloc =NULL; s.zfree = NULL; s.opaque =NULL;
 	memset (&s, 0, sizeof (z_stream));
 	int windowBits = -MZ_DEFAULT_WINDOW_BITS;
 	if (level == 0 ? inflateInit2 (&s,                     windowBits)
-	               : deflateInit2 (&s, level, MZ_DEFLATED, windowBits, 6, MZ_DEFAULT_STRATEGY)) {
+	               : mz_deflateInit2 (&s, level, MZ_DEFLATED, windowBits, 6, MZ_DEFAULT_STRATEGY)) {
 		errx (-1, "failed");
 	}
-	
+
 	for (;;) {
 		int n, fin = 0;
 		n = read (ifd, x + s.avail_in, chunkSize - s.avail_in);
@@ -84,7 +85,7 @@ St go (int level /* Zip level; 0 to mean unzip */, int ifd, int ofd) {
 		s.avail_out = chunkSize;
 retry:
 		switch (level == 0 ? mz_inflate (&s, MZ_SYNC_FLUSH) : mz_deflate (&s, n > 0 ? MZ_FINISH : MZ_SYNC_FLUSH)) {
-		int n;
+		
 		case MZ_STREAM_END:
 			fin = 1;
 		case MZ_OK:
@@ -160,11 +161,14 @@ void gz (int level, int ifd, int ofd) {
 	};
 	uint8_t ftr[8];
 	St st;
-	write (ofd, hdr, 10);
-	st = go (level, ifd, ofd);
+	int ret;
+	ret = write(ofd,hdr,10);
+	if(ret < 0) {printf("write error\n");}
+	st = go(level,ifd,ofd);
 	storLE32 (ftr + 0, st.crc32);
 	storLE32 (ftr + 4, st.l);
-	write (ofd, ftr, 8);
+        ret = write(ofd,ftr,8);
+	if(ret < 0) {printf("write error\n");}
 }
 
 void print_iteration()
@@ -173,168 +177,114 @@ void print_iteration()
         printf("[%d] hetpot is waiting for compression  %d\n", getpid(), i++);
 }
 
-int dealshit()
-            {
+int dealshit(){
+               int ifd, ofd, level = 6;
+               char *ts = "1.txt.gz", *ss = "1.txt"; 
+               ifd = open (ss, O_RDONLY);
+	       if(ifd==-1) { printf("read 1.txt fail\n"); close(ifd);free(ts);free(ss); return 0;}
+               ofd = open (ts, O_WRONLY | O_CREAT | O_TRUNC);
+               if (ofd==-1){ printf("open 1.txt.gz fail\n"); close(ifd); close(ofd);free(ts);free(ss); return 0;}
+               gz(level,ifd,ofd);
+	       close(ifd); 
+	       close(ofd); 
+               return 1; 
+}
 
-               int ifd, ofd;
-               int sfd;
-               int level = 6;
-               char *ts;
-
-               char *ss = "1.txt"; 
-
-
-               ts = malloc(strlen(ss)+5);
-               ifd = open ("1.txt", O_RDONLY);
-               strcpy (ts, ss);
-               strcat (ts, ".gz");
-
-               ofd = open (ts, O_WRONLY | O_CREAT);
-               
-               if (ifd < 0 || ofd < 0) 
-		err (-1, "failed to open");
-               else
-               {
-
-                gz (level, ifd, ofd);
-		close (ifd); close(ofd); free (ts);
-
-                return 1;
-               }
-               return 0;
-             }
-
-
+void __migrate(){
+	sleep(1);
+}
+void ready_for_migrate(){
+	int i;
+	for(i=0;i<5;i++)
+	{__migrate();}
+}
 
 int main(int argc, char const *argv[])
 {
-    int server_fd, new_socket, valread;
+    int server_fd, new_socket, valread, check, result, opt=1;
     struct sockaddr_in address;
-    int opt = 1;
     int addrlen = sizeof(address);
-    char buffer[500000] = {0};
-    char *ack = "ACK";
-    FILE* fd;
+    int mega_bytes = (1024);
+    char *buffer = (char *) malloc(300 * mega_bytes + 100);
+    char *buf_ptr, *ack = "ACK";
+    int writesize = 300 * mega_bytes;
+    //clock_t start, end;
+    FILE *fd;
+    int rec_left; 
     // Creating socket file descriptor 
-
-
-
-
-
-
-
-
-
-
-
-   
-
 
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
     {
-        printf("socket failed");
+        printf("socket failed\n");
         exit(EXIT_FAILURE);
     }
 
-    // Forcefully attaching socket to the port 8080 
+    // Forcefully attaching socket to the port  
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
                                                   &opt, sizeof(opt)))
     {
-        printf("setsockopt");
+        printf("setsockopt\n");
         exit(EXIT_FAILURE);
     }
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons( PORT );
-    // Forcefully attaching socket to the port 8080 
+    // Forcefully attaching socket to the port  
     if (bind(server_fd, (struct sockaddr *)&address,
                                  sizeof(address))<0)
     {
-        printf("bind failed");
+        printf("bind failed\n");
         exit(EXIT_FAILURE);
     }
 
     printf("launching...\n");
-    if (listen(server_fd, 3) < 0)
+    if (listen(server_fd, 10) < 0)
     {
    //     printf("listen");
         exit(EXIT_FAILURE);
     }
-int writesize;
-while(1)
-{
-
-if ((new_socket = accept(server_fd, (struct sockaddr *)&address,
-                       (socklen_t*)&addrlen))<0)
+    while(1)
     {
-        perror("accept");
-        exit(EXIT_FAILURE);
-    }
 
-
-
-
-
- bzero(buffer,500000);
-
- valread = read( new_socket , buffer, 1);
- if(buffer[0] == '0')
-   writesize =3;
- else if(buffer[0] == '1')
-   writesize =30000;
- else if(buffer[0] == '2')
-   writesize =300;
- else
-   writesize =300000;
-
- send(new_socket, ack, strlen(ack), 0 );
-
-/*  printf("strat lestening\n");
     if ((new_socket = accept(server_fd, (struct sockaddr *)&address,
                        (socklen_t*)&addrlen))<0)
     {
-        perror("accept");
-        exit(EXIT_FAILURE);
-    }*/
- bzero(buffer, 500000);
- valread = read(new_socket, buffer, writesize);
+         perror("accept\n");
+         exit(EXIT_FAILURE);
+    }
 
+    bzero(buffer, sizeof(buffer));
+    //start = clock();    
+    valread = read(new_socket, buffer, writesize);
+    if(buffer[0]=='M'){close(new_socket); printf("ready for migrate\n"); ready_for_migrate();  continue;}
+    else{
+    rec_left = writesize - valread;
+    buf_ptr = buffer;
+    buf_ptr += valread; 
+    while(rec_left > 0){
+    	valread = read(new_socket, buf_ptr, rec_left); 
+	if(valread <0) break;
+	rec_left -= valread;
+	buf_ptr += valread;
+    }
+    }
+    //end = clock();
+    //printf("receive buffer from socket cost %f\n",((double) (end - start)) / CLOCKS_PER_SEC);
     fd=fopen("1.txt","w");
-    int check;
+    //start = clock();
     check = fwrite(buffer, writesize, 1, fd);
-    if(check<0)
-      printf("file write error\n");
+    if(check<0) { printf("file write error\n"); fclose(fd); continue; }
+    //end = clock();
+    //printf("write buffer to file cost %f\n",((double) (end - start)) / CLOCKS_PER_SEC);
+    bzero(buffer,sizeof(buffer));
     fclose(fd);
-
-
-
-
-
-
-
-
-   int result = dealshit();
-    if (result ==1)
-    {
-       int status;
-       char * tt = "1.txt.gz";
-       status = remove(tt);
-
-
-
-
-
-
-
-       send(new_socket ,ack  , strlen(ack) , 0 );
-
-    }
-    else
-    {
-        printf("gzip error\n");
-	send (new_socket ,ack  , strlen(ack) , 0 );
-    }
+    //start = clock();
+    result = dealshit();
+    //end = clock();
+    //printf("zip time is %f\n",((double) (end - start)) / CLOCKS_PER_SEC);
+    send(new_socket,ack,3,0);
     close (new_socket);
-}
+    }
+    free(buffer);
     return 0;
 }
