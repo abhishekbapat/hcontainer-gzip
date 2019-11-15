@@ -189,7 +189,7 @@ int dealshit(){
 	       close(ofd); 
                return 1; 
 }
-
+// reset function is needed for add migration point in side select loop.
 void reset(struct timeval* tv){
     tv->tv_sec = 0;
     tv->tv_usec = 30;
@@ -248,10 +248,9 @@ int main(int argc, char const *argv[])
     FD_ZERO (&socketfds);   //clean set
     FD_SET(server_fd,&socketfds); //add socket fd to the set
 
-    reset(&tv);
-
+    reset(&tv); //once have timeout, the time should reinit. also as a function migrated point
+    //listening server_fd socket file describtor, once have incomming socket rise the accept socket.
     select_ret = select (server_fd + 1, &socketfds, NULL, NULL, &tv);
-    
     //printf("server_fd %d select %d\n",server_fd, select_ret);
     if (select_ret == -1 ) {printf("select error\n");continue;}
     if (FD_ISSET(server_fd , &socketfds)){
