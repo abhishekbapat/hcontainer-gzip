@@ -28,7 +28,7 @@
 #include <sys/socket.h> 
 #include <sys/types.h> 
 #include <time.h>
-
+#include <sys/time.h>
 #define MAX 80 
 #define SA struct sockaddr 
 
@@ -190,13 +190,9 @@ int dealshit(){
                return 1; 
 }
 
-void __migrate(){
-	sleep(1);
-}
-void ready_for_migrate(){
-	int i;
-	for(i=0;i<5;i++)
-	{__migrate();}
+void reset(struct timeval* tv){
+    tv->tv_sec = 0;
+    tv->tv_usec = 30;
 }
 
 int main(int argc, char const *argv[])
@@ -204,21 +200,24 @@ int main(int argc, char const *argv[])
     int server_fd, new_socket, valread, check, result, opt=1;
     struct sockaddr_in address;
     int addrlen = sizeof(address);
-    int mega_bytes = (1024);
-    char *buffer = (char *) malloc(300 * mega_bytes + 100);
+    int mega_bytes = (1024 * 1024);
+    char *buffer = (char *) malloc(3 * mega_bytes + 100);
     char *buf_ptr, *ack = "ACK";
-    int writesize = 300 * mega_bytes;
-    //clock_t start, end;
+    int writesize = 3 * mega_bytes;
+    clock_t start, end;
     FILE *fd;
-    int rec_left; 
+    int rec_left;
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 30;
+
     // Creating socket file descriptor 
 
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
         printf("socket failed\n");
         exit(EXIT_FAILURE);
     }
-
     // Forcefully attaching socket to the port  
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
                                                   &opt, sizeof(opt)))
@@ -236,28 +235,35 @@ int main(int argc, char const *argv[])
         printf("bind failed\n");
         exit(EXIT_FAILURE);
     }
-
     printf("launching...\n");
     if (listen(server_fd, 10) < 0)
     {
    //     printf("listen");
         exit(EXIT_FAILURE);
     }
+    fd_set socketfds;  //create select set
+    int select_ret;
     while(1)
     {
+    FD_ZERO (&socketfds);   //clean set
+    FD_SET(server_fd,&socketfds); //add socket fd to the set
 
+    reset(&tv);
+
+    select_ret = select (server_fd + 1, &socketfds, NULL, NULL, &tv);
+    
+    //printf("server_fd %d select %d\n",server_fd, select_ret);
+    if (select_ret == -1 ) {printf("select error\n");continue;}
+    if (FD_ISSET(server_fd , &socketfds)){
     if ((new_socket = accept(server_fd, (struct sockaddr *)&address,
                        (socklen_t*)&addrlen))<0)
     {
          perror("accept\n");
          exit(EXIT_FAILURE);
     }
-
+    
     bzero(buffer, sizeof(buffer));
-    //start = clock();    
     valread = read(new_socket, buffer, writesize);
-    if(buffer[0]=='M'){close(new_socket); printf("ready for migrate\n"); ready_for_migrate();  continue;}
-    else{
     rec_left = writesize - valread;
     buf_ptr = buffer;
     buf_ptr += valread; 
@@ -266,7 +272,6 @@ int main(int argc, char const *argv[])
 	if(valread <0) break;
 	rec_left -= valread;
 	buf_ptr += valread;
-    }
     }
     //end = clock();
     //printf("receive buffer from socket cost %f\n",((double) (end - start)) / CLOCKS_PER_SEC);
@@ -284,7 +289,7 @@ int main(int argc, char const *argv[])
     //printf("zip time is %f\n",((double) (end - start)) / CLOCKS_PER_SEC);
     send(new_socket,ack,3,0);
     close (new_socket);
-    }
+    }}
     free(buffer);
     return 0;
 }
