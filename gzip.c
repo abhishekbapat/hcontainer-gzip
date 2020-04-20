@@ -200,10 +200,10 @@ int main(int argc, char const *argv[])
     int server_fd, new_socket, valread, check, result, opt=1;
     struct sockaddr_in address;
     int addrlen = sizeof(address);
-    int mega_bytes = (1024 * 1024);
-    char *buffer = (char *) malloc(3 * mega_bytes + 100);
-    char *buf_ptr, *ack = "ACK";
-    int writesize = 3 * mega_bytes;
+    int mega_bytes = (1024);
+    char *buffer = (char *) malloc(90 * mega_bytes + 100);
+    char *buf_ptr, *ack = "AKC", *f_ack="NAK";
+    int writesize = 90 * mega_bytes;
     clock_t start, end;
     FILE *fd;
     int rec_left;
@@ -275,18 +275,19 @@ int main(int argc, char const *argv[])
     //end = clock();
     //printf("receive buffer from socket cost %f\n",((double) (end - start)) / CLOCKS_PER_SEC);
     fd=fopen("1.txt","w");
-    //start = clock();
+    start = clock();
     check = fwrite(buffer, writesize, 1, fd);
     if(check<0) { printf("file write error\n"); fclose(fd); continue; }
-    //end = clock();
-    //printf("write buffer to file cost %f\n",((double) (end - start)) / CLOCKS_PER_SEC);
+    end = clock();
+    printf("write buffer to file cost %f ms\n",(((double) (end - start)) / CLOCKS_PER_SEC));
     bzero(buffer,sizeof(buffer));
     fclose(fd);
-    //start = clock();
+    start = clock();
     result = dealshit();
-    //end = clock();
-    //printf("zip time is %f\n",((double) (end - start)) / CLOCKS_PER_SEC);
-    send(new_socket,ack,3,0);
+   end = clock();
+    printf("zip time is %f ms\n",(((double) (end - start)) / CLOCKS_PER_SEC )*1000 );
+    if (result ==0) send(new_socket,f_ack,3,0);
+    else  send(new_socket,ack,3,0);
     close (new_socket);
     }}
     free(buffer);
