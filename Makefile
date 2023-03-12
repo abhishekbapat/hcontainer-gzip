@@ -35,13 +35,11 @@ HET_CFLAGS := $(CFLAGS) -popcorn-migratable -fno-common \
 IR := $(SRC:.c=.ll)
 
 # Linker
-LD      := $(POPCORN)/bin/ld.gold
+LD      := $(POPCORN)/bin/x86_64-popcorn-linux-gnu-ld.gold
 LDFLAGS := -z noexecstack -z relro --hash-style=gnu --build-id -static
 LIBS    := /lib/crt1.o \
            /lib/libc.a \
-           /lib/libopenpop.a \
            /lib/libmigrate.a \
-           /lib/libstack-transform.a \
            /lib/libelf.a \
            /lib/libpthread.a \
            /lib/libc.a \
@@ -142,11 +140,11 @@ vanilla-aarch64: $(ARM64_VANILLA)
 vanilla-x86-64: $(X86_64_VANILLA)
 
 clean:
-	@echo " [CLEAN] $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) \
+	@echo " [CLEAN] $(BIN) $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) \
 		$(X86_64_BUILD) $(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) \
 		$(ARM64_LD_SCRIPT) $(ALIGN_WORKDIR) *.ll *.o"
 	@rm -rf $(ARM64_ALIGNED) $(ARM64_BUILD) $(X86_64_ALIGNED) $(X86_64_BUILD) \
-		$(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) $(ARM64_LD_SCRIPT) *.ll *.o
+		$(X86_64_SD_BUILD) $(X86_64_LD_SCRIPT) $(ARM64_LD_SCRIPT) $(BIN) *.ll *.o
 
 %.dir:
 	@echo " [MKDIR] $*"
